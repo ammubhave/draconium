@@ -2,11 +2,20 @@
 import argparse
 import codecs
 import os
+import sys
 from collections import namedtuple
 from HTMLParser import HTMLParser
 from htmlentitydefs import name2codepoint
 
-Tag = namedtuple('Tag', ['name', 'attrs', 'render'])
+Tag = namedtuple('Tag', ['name', 'attrs', 'render', 'allowed_child_tags'])
+
+
+class Stack(list):
+    def get_parent_tag(self):
+        for item in self[::-1]:
+            if type(item) == Tag:
+                return item
+        return None
 
 
 def _get_all_sources():
@@ -33,17 +42,32 @@ def _get_parser(out):
     class DraconiumParser(HTMLParser):
         def __init__(self):
             HTMLParser.__init__(self)
-            self.stack = []
+            self.stack = Stack()
             self.out = out
+
+        def _get_parent_tag(self):
+            for item in self.stack[::-1]:
+                if type(item) == Tag:
+                    return item
+            return None
 
         def handle_starttag(self, tag, attrs):
             if tag not in config.rules.tags:
                 self.error('Tag %s not allowed' % tag)
 
+            # Check if parent allows this tag
+            parent_tag = self._get_parent_tag()
+            if parent_tag and \
+               parent_tag.allowed_child_tags and \
+               tag not in parent_tag.allowed_child_tags:
+                self.error('%s is not allowed as a child of %s' % (tag, parent_tag.name))
+
+            tag_rule = config.rules.tags[tag]
             self.stack.append(Tag(
                 name=tag,
                 attrs=dict(attrs),
-                render=lambda attrs, stack, body: config.rules.tags[tag].render(attrs, stack, body),
+                render=lambda attrs, stack, body: tag_rule.render(attrs, stack, body),
+                allowed_child_tags=None if not hasattr(tag_rule, 'allowed_child_tags') else tag_rule.allowed_child_tags
             ))
 
             #print "Start tag:", tag
@@ -91,14 +115,11 @@ def _get_parser(out):
             #print "Num ent  :", c
 
         def handle_eof(self):
-            while len(self.stack) > 0:
-                elem = self.stack.pop()
-                if type(elem) != Tag:
-                    self.out.write(elem)
-                else:
+            print "EOF: " + str(self.stack)
+            for item in self.stack:
+                if type(item) == Tag:
                     self.error('Unrecognized data at the end')
-            #print "EOF: " + str(self.stack)
-            pass
+            self.out.write(''.join(self.stack))
 
     return DraconiumParser()
 
@@ -115,8 +136,9 @@ def process_file(file):
 
 def main():
     global config
+
     argparser = argparse.ArgumentParser(description=main.__doc__)
-    argparser.add_argument('--config', dest='config', default='config.py',
+    argparser.add_argument('--config', dest='config', default='sample/config.py',
                            help='the Draconium config file')
     argparser.add_argument('--iext', dest='iext',
                            help='file extension of draconium template')
@@ -125,9 +147,8 @@ def main():
     args = argparser.parse_args()
 
     # Get Draconium config file
-    if args.config.endswith('.py'):
-        args.config = args.config[:-3]
-    config = __import__(args.config)
+    sys.path = [os.path.dirname(os.path.join(os.getcwd(), args.config))] + sys.path
+    execfile(args.config, globals())
 
     if args.iext:
         config.iext = args.iext
@@ -143,6 +164,8 @@ def main():
     print 'Compiling draconium cheetah .dtmpl templates...'
     os.system('cheetah c -R --iext dtmpl --nobackup')
     print
+
+    config.import_rules()
 
     SOURCES = _get_all_sources()
     print 'Compiling draconium templates...'
