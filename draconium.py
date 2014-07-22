@@ -79,7 +79,7 @@ def _get_parser(out):
             last = self.stack.pop()
 
             while type(last) != Tag:
-                data += last
+                data = last + data
                 last = self.stack.pop()
 
             if last.name != tag:
@@ -115,7 +115,7 @@ def _get_parser(out):
             #print "Num ent  :", c
 
         def handle_eof(self):
-            print "EOF: " + str(self.stack)
+            # print "EOF: " + str(self.stack)
             for item in self.stack:
                 if type(item) == Tag:
                     self.error('Unrecognized data at the end')

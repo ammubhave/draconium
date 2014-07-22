@@ -1,3 +1,9 @@
 <html>
-    <button type="primary">Primary•</button>
+    <head>
+        <title>Test sample draconium template</title>
+    </head>
+    <body>
+        <button type="primary">Primary•</button>
+        <button type="default">default</button>
+    </body>
 </html>
